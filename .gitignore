@@ -1,0 +1,33 @@
+# Binaries and object files
+*.exe
+*.o
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+
+# Data and Logs
+exfiltrated/
+*.log
+*.tmp
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+CPP/sqlite3.o
+CPP/test.exe
+CPP/RuntimeBroker.exe
