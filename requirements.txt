@@ -1,0 +1,12 @@
+flask
+rich
+requests
+numpy
+mss
+opencv-python
+sounddevice
+scipy
+pycryptodome
+werkzeug
+plyer
+# pyjnius (Required for Android/APK payloads)
