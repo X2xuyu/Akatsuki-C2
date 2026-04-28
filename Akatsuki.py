@@ -430,7 +430,7 @@ def build_phase(cfg):
 
             elif build_method == "1":
                 # Nuitka only (NO PyArmor — they are incompatible)
-                info("Running Nuitka compilation (this may take 5-10 minutes)...")
+                info("Running Nuitka compilation...")
                 nuitka_cmd = [
                     sys.executable, "-m", "nuitka",
                     "--standalone", "--onefile",
@@ -443,13 +443,118 @@ def build_phase(cfg):
                     "--output-filename=" + build_name + ".exe",
                     target
                 ]
-                r = subprocess.run(nuitka_cmd, capture_output=True, text=True)
-                if r.returncode == 0:
+
+                import time as _time, threading as _th
+
+                proc = subprocess.Popen(
+                    nuitka_cmd,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, bufsize=1, encoding='utf-8', errors='replace'
+                )
+
+                # Shared state between threads
+                _lock = _th.Lock()
+                _state = {"pct": 0, "stage": "Initializing...", "done": False}
+                _SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+                def _reader():
+                    """Background thread: read Nuitka output, update progress."""
+                    for raw_line in proc.stdout:
+                        ln = raw_line.strip()
+                        if not ln:
+                            continue
+                        with _lock:
+                            if "Starting Python compilation" in ln:
+                                _state["stage"] = "Python compilation..."
+                                _state["pct"] = max(_state["pct"], 5)
+                            elif "Completed Python level" in ln:
+                                _state["stage"] = "Python optimization done"
+                                _state["pct"] = max(_state["pct"], 15)
+                            elif "Generating source code" in ln:
+                                _state["stage"] = "Generating C source..."
+                                _state["pct"] = max(_state["pct"], 20)
+                            elif "Running data composer" in ln:
+                                _state["stage"] = "Data composer..."
+                                _state["pct"] = max(_state["pct"], 25)
+                            elif "Running C compilation" in ln:
+                                _state["stage"] = "C compilation..."
+                                _state["pct"] = max(_state["pct"], 28)
+                            elif "Backend C compiler" in ln:
+                                cc = ln.split(":")[-1].strip().rstrip(".")
+                                _state["stage"] = f"Compiler: {cc}"
+                                _state["pct"] = max(_state["pct"], 30)
+                            elif "Compiled " in ln and "/" in ln:
+                                m = re.search(r'(\d+)/(\d+)', ln)
+                                if m:
+                                    done, total = int(m.group(1)), int(m.group(2))
+                                    p = 30 + int(45 * done / max(total, 1))
+                                    _state["pct"] = max(_state["pct"], p)
+                                    _state["stage"] = f"Compiling C: {done}/{total}"
+                            elif "linking" in ln.lower():
+                                _state["stage"] = "Linking..."
+                                _state["pct"] = max(_state["pct"], 78)
+                            elif "Onefile" in ln or "onefile" in ln or "Creating single" in ln:
+                                _state["stage"] = "Packing onefile..."
+                                _state["pct"] = max(_state["pct"], 85)
+                            elif "Keeping dist" in ln or "Removing dist" in ln:
+                                _state["pct"] = max(_state["pct"], 95)
+                    with _lock:
+                        _state["done"] = True
+
+                reader = _th.Thread(target=_reader, daemon=True)
+                reader.start()
+
+                # Main thread: smooth 10 FPS animation
+                BAR_W = 40
+                start_t = _time.time()
+                spin_i = 0
+                display_pct = 0.0  # float for smooth interpolation
+
+                while True:
+                    with _lock:
+                        target_pct = _state["pct"]
+                        stage = _state["stage"]
+                        done = _state["done"]
+
+                    # Smooth interpolation toward target
+                    if display_pct < target_pct:
+                        display_pct = min(display_pct + 0.8, target_pct)
+                    
+                    ipct = int(display_pct)
+                    filled = int(BAR_W * display_pct / 100)
+                    bar = f"{G}{'█' * filled}{D}{'░' * (BAR_W - filled)}{RST}"
+                    elapsed = _time.time() - start_t
+                    mins, secs = int(elapsed) // 60, int(elapsed) % 60
+                    spin = _SPIN[spin_i % len(_SPIN)]
+                    spin_i += 1
+
+                    line = f"\r  {C}{spin}{RST} [{bar}] {W}{ipct:3d}%{RST}  {D}{stage:<35s} {mins:02d}:{secs:02d}{RST}"
+                    print(line, end="", flush=True)
+
+                    if done and proc.poll() is not None:
+                        break
+                    _time.sleep(0.1)
+
+                proc.wait()
+
+                # Final render
+                elapsed = _time.time() - start_t
+                mins, secs = int(elapsed) // 60, int(elapsed) % 60
+
+                if proc.returncode == 0:
+                    bar_full = f"{G}{'█' * BAR_W}{RST}"
+                    print(f"\r  {G}✓{RST} [{bar_full}] {G}100%{RST}  {G}{'Build complete!':<35s} {mins:02d}:{secs:02d}{RST}")
                     exe_path = os.path.join(BUILD_DIR, build_name + ".exe")
                     ok(f"Nuitka build complete")
                     info(f"Output: {exe_path}")
+                    if os.path.exists(exe_path):
+                        sz = os.path.getsize(exe_path)
+                        if sz > 1024*1024:
+                            info(f"Size: {sz / (1024*1024):.1f} MB")
+                        else:
+                            info(f"Size: {sz / 1024:.0f} KB")
                 else:
-                    err(f"Nuitka failed: {r.stderr[:300]}")
+                    err(f"Nuitka failed (exit code {proc.returncode})")
 
             else:
                 # PyInstaller only
