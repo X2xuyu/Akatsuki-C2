@@ -1,12 +1,25 @@
+# C2 Server
 flask
+flask-sock
+flask-socketio
 rich
 requests
+werkzeug
+
+# Payload dependencies (PC)
 numpy
 mss
 opencv-python
 sounddevice
 scipy
 pycryptodome
-werkzeug
 plyer
-# pyjnius (Required for Android/APK payloads)
+
+# Build tools (optional)
+# pyinstaller
+# nuitka
+# pyarmor
+
+# Android/APK only (install on Linux)
+# pyjnius
+# buildozer

