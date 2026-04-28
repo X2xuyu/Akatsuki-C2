@@ -93,7 +93,7 @@ Fsociety/
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/X2xuyu/Akatsuki-C2.git
+git clone <YOUR_REPO_URL>
 cd Fsociety
 pip install -r requirements.txt
 ```

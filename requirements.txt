@@ -1,3 +1,8 @@
+# ═══════════════════════════════════════
+#   AKATSUKI C2 — Requirements
+#   pip install -r requirements.txt
+# ═══════════════════════════════════════
+
 # C2 Server
 flask
 flask-sock
@@ -15,11 +20,12 @@ scipy
 pycryptodome
 plyer
 
-# Build tools (optional)
+# Build tools
 pyinstaller
 nuitka
 pyarmor
 
-# Android/APK only (install on Linux)
+# Android/APK only (uncomment on Linux)
 # pyjnius
 # buildozer
+# kivy
