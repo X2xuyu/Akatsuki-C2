@@ -16,9 +16,9 @@ pycryptodome
 plyer
 
 # Build tools (optional)
-# pyinstaller
-# nuitka
-# pyarmor
+pyinstaller
+nuitka
+pyarmor
 
 # Android/APK only (install on Linux)
 # pyjnius
